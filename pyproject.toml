@@ -6,6 +6,8 @@ requires-python = ">=3.11"
 dependencies = [
     "requests>=2.32",
     "click>=8.1",
+    "sentence-transformers>=3.0",
+    "chromadb>=0.6",
 ]
 
 [project.scripts]
