@@ -23,7 +23,7 @@ Applied at query time (API-side):
 - `indications_and_usage:"{indication}"` — parameterised, default `"atopic dermatitis"`
 
 Applied post-download (client-side):
-- Marketing status: keep records where top-level `marketing_status` includes "Prescription" (field is inconsistently populated in the API, so filter after fetch)
+- Marketing status: keep records where `openfda.marketing_status` list contains "Prescription" (field is inconsistently populated, so filter after fetch rather than in the API query)
 - Dedup: group by `openfda.spl_set_id`, keep record with highest `openfda.spl_version`
 
 openFDA pagination: `limit=1000` (API max), `skip` increments by 1000. Hard cap: `skip + limit ≤ 25,000`.
