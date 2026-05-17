@@ -203,6 +203,6 @@ def main(
                 else:
                     skipped += 1
 
-        click.echo(f"Done. {inserted} written, {skipped} skipped → {db_path}")
+        click.echo(f"Done. {inserted} written, {skipped} skipped -> {db_path}")
     finally:
         conn.close()

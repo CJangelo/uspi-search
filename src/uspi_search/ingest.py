@@ -140,8 +140,12 @@ def dedup_by_spl_set_id(records: list[dict]) -> list[dict]:
 
 
 def _is_currently_marketed(record: dict) -> bool:
+    # Opt-out: exclude records explicitly marked discontinued.
+    # Opt-in for "prescription" is too aggressive — the field is often absent
+    # even for valid NDA/BLA drugs; product_type + application_number already
+    # guarantee prescription-only innovator labels at the API level.
     statuses = record.get("openfda", {}).get("marketing_status", [])
-    return any("prescription" in s.lower() for s in statuses)
+    return not any("discontinued" in s.lower() for s in statuses)
 
 
 def _indication_slug(indication: str) -> str:
@@ -203,7 +207,7 @@ def main(
         skip_offset = len(all_records)
         batch_file = out_path / f"batch_{skip_offset:06d}.json"
         batch_file.write_text(json.dumps(batch, indent=2), encoding="utf-8")
-        log.info("Fetched %d records → %s", len(batch), batch_file.name)
+        log.info("Fetched %d records -> %s", len(batch), batch_file.name)
         all_records.extend(batch)
 
     log.info("Total fetched: %d", len(all_records))
@@ -219,4 +223,4 @@ def main(
     out_file = out_path / f"deduped_{slug}_{ts}.json"
     out_file.write_text(json.dumps(deduped, indent=2), encoding="utf-8")
 
-    click.echo(f"Done. {len(deduped)} labels → {out_file}")
+    click.echo(f"Done. {len(deduped)} labels -> {out_file}")

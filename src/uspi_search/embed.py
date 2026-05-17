@@ -195,7 +195,7 @@ def main(
                 log.info("[%d/%d] %s — %d chunk(s)", labels_done, len(pending), label_id, n)
 
         click.echo(
-            f"Done. {labels_done} label(s) embedded, {total_chunks} chunk(s) → {chroma_dir}"
+            f"Done. {labels_done} label(s) embedded, {total_chunks} chunk(s) -> {chroma_dir}"
         )
     finally:
         conn.close()
