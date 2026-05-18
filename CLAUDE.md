@@ -2,9 +2,9 @@
 
 ## What this project is
 
-Hybrid keyword + semantic retrieval system for FDA drug labels via the openFDA
-`/drug/label.json` API. **Not RAG** — no generation step. Returns merged ranked
-results from FTS5 (keyword) and ChromaDB (semantic) searches.
+Keyword and semantic retrieval system for FDA drug labels via the openFDA
+`/drug/label.json` API. **Not RAG** — no generation step. Two distinct search
+modes: exact keyword (FTS5) and concept search (ChromaDB semantic, optional hybrid).
 
 ## Implementation status
 
@@ -17,7 +17,7 @@ src/uspi_search/
     ingest.py          # Stage 1: fetch from openFDA, save raw JSON
     parse.py           # Stage 2: extract sections, write SQLite + FTS5
     embed.py           # Stage 3: chunk + embed via sentence-transformers -> ChromaDB
-    query.py           # Hybrid search: FTS5 + ChromaDB, RRF merge
+    query.py           # Two subcommands: 'keyword' (FTS5) and 'search' (semantic/hybrid)
     pipeline.py        # Orchestrator: ingest -> parse -> embed
     models.py          # LabelRecord dataclass (shared parser contract)
     parsers/
@@ -43,9 +43,16 @@ uv run pipeline --skip-embed           # ingest + parse only (no model download)
 uv run ingest --indication "atopic dermatitis" --out-dir data/raw
 uv run parse  --in-dir data/raw --db data/labels.db
 uv run embed  --db data/labels.db --chroma-dir data/chroma
-uv run query  "dupilumab mechanism of action"
-uv run query  "IL-13 inhibitor" --section indications_and_usage --top-k 5
-uv run query  "hepatotoxicity" --json
+
+# Keyword search — exact term, returns all matching drugs (FTS5 only)
+uv run query keyword "vIGA"
+uv run query keyword "dupilumab" --section indications_and_usage
+uv run query keyword "hepatotoxicity" --json
+
+# Concept search — finds labels relevant to an idea (semantic)
+uv run query search "pediatric itch"
+uv run query search "IL-13 inhibitor" --top-k 5
+uv run query search "mechanism of action JAK inhibitor" --fts-weight 1.0  # hybrid
 ```
 
 ## openFDA ingest filters

@@ -1,11 +1,13 @@
 """
-query.py — Section-aware hybrid search over FTS5 (keyword) + ChromaDB (semantic).
-Results are merged with Reciprocal Rank Fusion (RRF). No generation step.
+query.py — Two search modes over FDA drug labels.
 
 Usage:
-    uv run query "dupilumab mechanism of action"
-    uv run query "IL-13 signaling" --section indications_and_usage --top-k 5
-    uv run query "hepatotoxicity" --section warnings_and_cautions --json
+    uv run query keyword "vIGA"                          # exact match, all drugs
+    uv run query keyword "vIGA" --section clinical_studies
+    uv run query search "pediatric itch"                 # semantic/concept search
+    uv run query search "IL-13 signaling" --top-k 5
+    uv run query search "hepatotoxicity" --fts-weight 1  # hybrid
+    uv run query --help                                  # show subcommands
 """
 
 import json
@@ -23,6 +25,7 @@ log = logging.getLogger(__name__)
 _DEFAULT_MODEL = "all-MiniLM-L6-v2"
 _DEFAULT_COLLECTION = "label_sections"
 _RRF_K = 60  # standard constant; higher K = more conservative blending
+_UNLIMITED = 10_000  # practical cap when top_k == 0 (all results)
 
 
 # --------------------------------------------------------------------------- #
@@ -68,6 +71,31 @@ def search_fts(
         rows = []
 
     return [(r[0], r[1], r[2]) for r in rows]
+
+
+def count_fts_drugs(
+    conn: sqlite3.Connection,
+    query_text: str,
+    sections: tuple[str, ...],
+) -> int | None:
+    """Return total unique drugs matching the FTS query (for the info line)."""
+    where_clauses = ["sections_fts MATCH ?"]
+    params: list[Any] = [query_text]
+    if sections:
+        placeholders = ",".join("?" * len(sections))
+        where_clauses.append(f"s.section_name IN ({placeholders})")
+        params.extend(sections)
+    sql = f"""
+        SELECT COUNT(DISTINCT s.label_id)
+        FROM sections_fts fts
+        JOIN sections s ON s.id = fts.rowid
+        WHERE {' AND '.join(where_clauses)}
+    """
+    try:
+        row = conn.execute(sql, params).fetchone()
+        return row[0] if row else 0
+    except sqlite3.OperationalError:
+        return None
 
 
 # --------------------------------------------------------------------------- #
@@ -184,10 +212,11 @@ def enrich(conn: sqlite3.Connection, results: list[dict]) -> list[dict]:
 # Group section-level hits by drug                                              #
 # --------------------------------------------------------------------------- #
 
-def _group_by_drug(results: list[dict]) -> list[dict]:
+def _group_by_drug(results: list[dict], limit: int) -> list[dict]:
     """Collapse per-section results into one entry per drug.
 
     Drug order follows RRF ranking (first occurrence = best-scoring section).
+    limit=0 means return all.
     """
     drugs: dict[str, dict] = {}
     for hit in results:
@@ -208,15 +237,24 @@ def _group_by_drug(results: list[dict]) -> list[dict]:
             "fts_snippet": hit.get("fts_snippet"),
             "text": hit.get("text", ""),
         })
-    return list(drugs.values())
+    result_list = list(drugs.values())
+    return result_list if limit == 0 else result_list[:limit]
 
 
 # --------------------------------------------------------------------------- #
 # Display                                                                        #
 # --------------------------------------------------------------------------- #
 
-def _print_results(drugs: list[dict], query_text: str) -> None:
+def _print_results(drugs: list[dict], query_text: str, fts_total: int | None, top_k: int) -> None:
     click.echo(f'\nQuery: "{query_text}"')
+    if fts_total is not None:
+        if top_k > 0 and len(drugs) < fts_total:
+            click.echo(
+                f"Showing {len(drugs)} of {fts_total} matching drugs. "
+                f"Use --top-k 0 to see all {fts_total}."
+            )
+        else:
+            click.echo(f"{fts_total} matching drug(s).")
     click.echo("-" * 72)
     if not drugs:
         click.echo("No results.")
@@ -236,91 +274,141 @@ def _print_results(drugs: list[dict], query_text: str) -> None:
 # CLI                                                                           #
 # --------------------------------------------------------------------------- #
 
-@click.command()
-@click.argument("query_text")
+@click.group()
 @click.option("--db", default="data/labels.db", show_default=True, type=click.Path())
 @click.option("--chroma-dir", default="data/chroma", show_default=True, type=click.Path())
 @click.option(
     "--model", default=_DEFAULT_MODEL, show_default=True,
-    help="sentence-transformers model (must match what embed.py used).",
+    help="sentence-transformers model (must match what embed used).",
 )
 @click.option("--collection", default=_DEFAULT_COLLECTION, show_default=True)
-@click.option(
-    "--section", "sections", multiple=True,
-    help="Restrict to specific section name(s). Repeatable.",
-)
-@click.option("--top-k", default=10, show_default=True, type=int)
-@click.option(
-    "--fts-weight", default=1.0, show_default=True, type=float,
-    help="RRF weight applied to keyword results.",
-)
-@click.option(
-    "--sem-weight", default=1.0, show_default=True, type=float,
-    help="RRF weight applied to semantic results.",
-)
-@click.option("--snippet-tokens", default=40, show_default=True, type=int,
-              help="Approximate tokens in each FTS5 snippet.")
-@click.option("--json", "output_json", is_flag=True, help="Emit results as JSON.")
 @click.option("--verbose", "-v", is_flag=True)
-def main(
-    query_text: str,
-    db: str,
-    chroma_dir: str,
-    model: str,
-    collection: str,
-    sections: tuple[str, ...],
-    top_k: int,
-    fts_weight: float,
-    sem_weight: float,
-    snippet_tokens: int,
-    output_json: bool,
-    verbose: bool,
-) -> None:
-    """Hybrid keyword + semantic search over FDA label sections."""
+@click.pass_context
+def main(ctx: click.Context, db: str, chroma_dir: str, model: str, collection: str, verbose: bool) -> None:
+    """Search FDA drug labels: 'keyword' for exact terms, 'search' for concepts."""
+    ctx.ensure_object(dict)
+    ctx.obj.update(db=db, chroma_dir=chroma_dir, model=model, collection=collection)
     logging.basicConfig(
         level=logging.DEBUG if verbose else logging.WARNING,
         format="%(asctime)s %(levelname)s %(message)s",
     )
 
-    db_path = Path(db)
+
+@main.command("keyword")
+@click.argument("query_text")
+@click.option(
+    "--section", "sections", multiple=True,
+    help="Restrict to specific section name(s). Repeatable.",
+)
+@click.option("--top-k", default=0, show_default=True, type=int,
+              help="Drugs to return (0 = all matching).")
+@click.option("--snippet-tokens", default=40, show_default=True, type=int,
+              help="Approximate tokens in each FTS5 snippet.")
+@click.option("--json", "output_json", is_flag=True, help="Emit results as JSON.")
+@click.pass_context
+def keyword_cmd(
+    ctx: click.Context,
+    query_text: str,
+    sections: tuple[str, ...],
+    top_k: int,
+    snippet_tokens: int,
+    output_json: bool,
+) -> None:
+    """Exact keyword search (FTS5). Returns every drug label containing the term."""
+    o = ctx.obj
+    db_path = Path(o["db"])
     if not db_path.exists():
-        raise click.ClickException(f"Database not found: {db_path} — run `parse` first.")
+        raise click.ClickException(f"Database not found: {db_path} — run 'parse' first.")
 
-    chroma_client = chromadb.PersistentClient(path=str(Path(chroma_dir)))
-    try:
-        chroma_col = chroma_client.get_collection(name=collection)
-        do_semantic = chroma_col.count() > 0
-    except Exception:
-        chroma_col = None
-        do_semantic = False
-        log.warning("Collection '%s' not found — semantic search disabled.", collection)
-
-    # Only load the model if the collection exists and has data
-    st_model = SentenceTransformer(model) if do_semantic else None
-
-    candidate_limit = top_k * 5
+    candidate_limit = _UNLIMITED if top_k == 0 else top_k * 10
+    section_limit   = _UNLIMITED if top_k == 0 else top_k * 5
 
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA foreign_keys=ON")
     try:
+        fts_total = count_fts_drugs(conn, query_text, sections)
         fts_hits_raw = search_fts(conn, query_text, sections, candidate_limit, snippet_tokens)
         fts_snippets = {(lid, sec): snip for lid, sec, snip in fts_hits_raw}
         fts_hits = [(lid, sec) for lid, sec, _ in fts_hits_raw]
-
-        sem_hits = (
-            search_semantic(chroma_col, st_model, query_text, sections, candidate_limit)
-            if do_semantic
-            else []
-        )
-        merged = rrf_merge(fts_hits, sem_hits, fts_weight, sem_weight, top_k)
+        merged = rrf_merge(fts_hits, [], 1.0, 0.0, section_limit)
         for hit in merged:
             hit["fts_snippet"] = fts_snippets.get((hit["label_id"], hit["section_name"]))
         results = enrich(conn, merged)
-        drugs = _group_by_drug(results)
+        drugs = _group_by_drug(results, top_k)
     finally:
         conn.close()
 
     if output_json:
-        click.echo(json.dumps(drugs, indent=2))
+        click.echo(json.dumps({"total_fts_drugs": fts_total, "drugs": drugs}, indent=2))
     else:
-        _print_results(drugs, query_text)
+        _print_results(drugs, query_text, fts_total, top_k)
+
+
+@main.command("search")
+@click.argument("query_text")
+@click.option(
+    "--section", "sections", multiple=True,
+    help="Restrict to specific section name(s). Repeatable.",
+)
+@click.option("--top-k", default=10, show_default=True, type=int,
+              help="Drugs to return.")
+@click.option(
+    "--fts-weight", default=0.0, show_default=True, type=float,
+    help="Set >0 to add keyword results (hybrid mode).",
+)
+@click.option("--snippet-tokens", default=40, show_default=True, type=int,
+              help="Approximate tokens in each FTS5 snippet (hybrid mode only).")
+@click.option("--json", "output_json", is_flag=True, help="Emit results as JSON.")
+@click.pass_context
+def search_cmd(
+    ctx: click.Context,
+    query_text: str,
+    sections: tuple[str, ...],
+    top_k: int,
+    fts_weight: float,
+    snippet_tokens: int,
+    output_json: bool,
+) -> None:
+    """Concept search (semantic). Finds labels relevant to the idea, not exact words."""
+    o = ctx.obj
+    db_path = Path(o["db"])
+    if not db_path.exists():
+        raise click.ClickException(f"Database not found: {db_path} — run 'parse' first.")
+
+    chroma_client = chromadb.PersistentClient(path=str(Path(o["chroma_dir"])))
+    try:
+        chroma_col = chroma_client.get_collection(name=o["collection"])
+        if chroma_col.count() == 0:
+            raise click.ClickException("ChromaDB collection is empty -- run 'embed' first.")
+    except click.ClickException:
+        raise
+    except Exception:
+        raise click.ClickException("ChromaDB collection not found -- run 'embed' first.")
+
+    st_model = SentenceTransformer(o["model"])
+    candidate_limit = top_k * 10
+    section_limit   = top_k * 5
+
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA foreign_keys=ON")
+    try:
+        fts_snippets: dict = {}
+        fts_hits: list = []
+        if fts_weight > 0:
+            fts_hits_raw = search_fts(conn, query_text, sections, candidate_limit, snippet_tokens)
+            fts_snippets = {(lid, sec): snip for lid, sec, snip in fts_hits_raw}
+            fts_hits = [(lid, sec) for lid, sec, _ in fts_hits_raw]
+
+        sem_hits = search_semantic(chroma_col, st_model, query_text, sections, candidate_limit)
+        merged = rrf_merge(fts_hits, sem_hits, fts_weight, 1.0, section_limit)
+        for hit in merged:
+            hit["fts_snippet"] = fts_snippets.get((hit["label_id"], hit["section_name"]))
+        results = enrich(conn, merged)
+        drugs = _group_by_drug(results, top_k)
+    finally:
+        conn.close()
+
+    if output_json:
+        click.echo(json.dumps({"drugs": drugs}, indent=2))
+    else:
+        _print_results(drugs, query_text, None, top_k)
