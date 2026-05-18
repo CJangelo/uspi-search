@@ -34,6 +34,7 @@ def search_fts(
     query_text: str,
     sections: tuple[str, ...],
     limit: int,
+    snippet_tokens: int = 40,
 ) -> list[tuple[str, str, str]]:
     """Return [(label_id, section_name, snippet)] ranked by FTS5 BM25 (best first).
 
@@ -41,7 +42,9 @@ def search_fts(
     with matched terms wrapped in [ ]. Column index 2 = the text column.
     """
     where_clauses = ["sections_fts MATCH ?"]
-    params: list[Any] = [query_text]
+
+    # snippet(? ) appears in SELECT (before WHERE), so it must be first in params.
+    params: list[Any] = [snippet_tokens, query_text]
 
     if sections:
         placeholders = ",".join("?" * len(sections))
@@ -51,7 +54,7 @@ def search_fts(
     params.append(limit)
     sql = f"""
         SELECT s.label_id, s.section_name,
-               snippet(sections_fts, 2, '[', ']', '...', 20)
+               snippet(sections_fts, 2, '[', ']', '...', ?)
         FROM sections_fts fts
         JOIN sections s ON s.id = fts.rowid
         WHERE {' AND '.join(where_clauses)}
@@ -178,26 +181,55 @@ def enrich(conn: sqlite3.Connection, results: list[dict]) -> list[dict]:
 
 
 # --------------------------------------------------------------------------- #
+# Group section-level hits by drug                                              #
+# --------------------------------------------------------------------------- #
+
+def _group_by_drug(results: list[dict]) -> list[dict]:
+    """Collapse per-section results into one entry per drug.
+
+    Drug order follows RRF ranking (first occurrence = best-scoring section).
+    """
+    drugs: dict[str, dict] = {}
+    for hit in results:
+        lid = hit["label_id"]
+        if lid not in drugs:
+            drugs[lid] = {
+                "label_id": lid,
+                "brand_name": hit["brand_name"],
+                "generic_name": hit["generic_name"],
+                "application_number": hit["application_number"],
+                "best_score": hit["score"],
+                "sections": [],
+            }
+        drugs[lid]["sections"].append({
+            "section_name": hit["section_name"],
+            "score": hit["score"],
+            "match_source": hit["match_source"],
+            "fts_snippet": hit.get("fts_snippet"),
+            "text": hit.get("text", ""),
+        })
+    return list(drugs.values())
+
+
+# --------------------------------------------------------------------------- #
 # Display                                                                        #
 # --------------------------------------------------------------------------- #
 
-def _print_results(results: list[dict], query_text: str) -> None:
+def _print_results(drugs: list[dict], query_text: str) -> None:
     click.echo(f'\nQuery: "{query_text}"')
     click.echo("-" * 72)
-    if not results:
+    if not drugs:
         click.echo("No results.")
         return
-    for i, hit in enumerate(results, 1):
-        label = hit.get("brand_name") or hit.get("generic_name") or hit["label_id"]
-        app_no = f"({hit['application_number']})" if hit.get("application_number") else ""
-        # Prefer FTS snippet (shows the matching excerpt); fall back to section start
-        excerpt = hit.get("fts_snippet") or hit.get("text", "")[:300]
-        excerpt = excerpt.replace("\n", " ")
-        click.echo(
-            f"#{i}  score={hit['score']:.4f}  [{hit['match_source']}]\n"
-            f"    {label} {app_no} | {hit['section_name']}\n"
-            f"    {excerpt}\n"
-        )
+    for i, drug in enumerate(drugs, 1):
+        label = drug.get("brand_name") or drug.get("generic_name") or drug["label_id"]
+        app_no = f"({drug['application_number']})" if drug.get("application_number") else ""
+        click.echo(f"#{i}  {label} {app_no}  score={drug['best_score']:.4f}")
+        for sec in drug["sections"]:
+            excerpt = sec.get("fts_snippet") or sec.get("text", "")[:300]
+            excerpt = excerpt.replace("\n", " ").encode("ascii", errors="replace").decode("ascii")
+            click.echo(f"    [{sec['section_name']}][{sec['match_source']}] {excerpt}")
+        click.echo("")
 
 
 # --------------------------------------------------------------------------- #
@@ -226,6 +258,8 @@ def _print_results(results: list[dict], query_text: str) -> None:
     "--sem-weight", default=1.0, show_default=True, type=float,
     help="RRF weight applied to semantic results.",
 )
+@click.option("--snippet-tokens", default=40, show_default=True, type=int,
+              help="Approximate tokens in each FTS5 snippet.")
 @click.option("--json", "output_json", is_flag=True, help="Emit results as JSON.")
 @click.option("--verbose", "-v", is_flag=True)
 def main(
@@ -238,6 +272,7 @@ def main(
     top_k: int,
     fts_weight: float,
     sem_weight: float,
+    snippet_tokens: int,
     output_json: bool,
     verbose: bool,
 ) -> None:
@@ -268,7 +303,7 @@ def main(
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA foreign_keys=ON")
     try:
-        fts_hits_raw = search_fts(conn, query_text, sections, candidate_limit)
+        fts_hits_raw = search_fts(conn, query_text, sections, candidate_limit, snippet_tokens)
         fts_snippets = {(lid, sec): snip for lid, sec, snip in fts_hits_raw}
         fts_hits = [(lid, sec) for lid, sec, _ in fts_hits_raw]
 
@@ -281,10 +316,11 @@ def main(
         for hit in merged:
             hit["fts_snippet"] = fts_snippets.get((hit["label_id"], hit["section_name"]))
         results = enrich(conn, merged)
+        drugs = _group_by_drug(results)
     finally:
         conn.close()
 
     if output_json:
-        click.echo(json.dumps(results, indent=2))
+        click.echo(json.dumps(drugs, indent=2))
     else:
-        _print_results(results, query_text)
+        _print_results(drugs, query_text)
