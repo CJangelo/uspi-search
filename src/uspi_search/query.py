@@ -34,8 +34,12 @@ def search_fts(
     query_text: str,
     sections: tuple[str, ...],
     limit: int,
-) -> list[tuple[str, str]]:
-    """Return [(label_id, section_name)] ranked by FTS5 BM25 (best first)."""
+) -> list[tuple[str, str, str]]:
+    """Return [(label_id, section_name, snippet)] ranked by FTS5 BM25 (best first).
+
+    snippet() returns the portion of the section text that contains the match,
+    with matched terms wrapped in [ ]. Column index 2 = the text column.
+    """
     where_clauses = ["sections_fts MATCH ?"]
     params: list[Any] = [query_text]
 
@@ -46,7 +50,8 @@ def search_fts(
 
     params.append(limit)
     sql = f"""
-        SELECT s.label_id, s.section_name
+        SELECT s.label_id, s.section_name,
+               snippet(sections_fts, 2, '[', ']', '...', 20)
         FROM sections_fts fts
         JOIN sections s ON s.id = fts.rowid
         WHERE {' AND '.join(where_clauses)}
@@ -59,7 +64,7 @@ def search_fts(
         log.warning("FTS5 error (check query syntax): %s", exc)
         rows = []
 
-    return [(r[0], r[1]) for r in rows]
+    return [(r[0], r[1], r[2]) for r in rows]
 
 
 # --------------------------------------------------------------------------- #
@@ -178,20 +183,19 @@ def enrich(conn: sqlite3.Connection, results: list[dict]) -> list[dict]:
 
 def _print_results(results: list[dict], query_text: str) -> None:
     click.echo(f'\nQuery: "{query_text}"')
-    click.echo("─" * 72)
+    click.echo("-" * 72)
     if not results:
         click.echo("No results.")
         return
     for i, hit in enumerate(results, 1):
         label = hit.get("brand_name") or hit.get("generic_name") or hit["label_id"]
         app_no = f"({hit['application_number']})" if hit.get("application_number") else ""
-        text = hit.get("text", "")
-        excerpt = text[:300].replace("\n", " ")
-        if len(text) > 300:
-            excerpt += "…"
+        # Prefer FTS snippet (shows the matching excerpt); fall back to section start
+        excerpt = hit.get("fts_snippet") or hit.get("text", "")[:300]
+        excerpt = excerpt.replace("\n", " ")
         click.echo(
             f"#{i}  score={hit['score']:.4f}  [{hit['match_source']}]\n"
-            f"    {label} {app_no}  ·  {hit['section_name']}\n"
+            f"    {label} {app_no} | {hit['section_name']}\n"
             f"    {excerpt}\n"
         )
 
@@ -264,13 +268,18 @@ def main(
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA foreign_keys=ON")
     try:
-        fts_hits = search_fts(conn, query_text, sections, candidate_limit)
+        fts_hits_raw = search_fts(conn, query_text, sections, candidate_limit)
+        fts_snippets = {(lid, sec): snip for lid, sec, snip in fts_hits_raw}
+        fts_hits = [(lid, sec) for lid, sec, _ in fts_hits_raw]
+
         sem_hits = (
             search_semantic(chroma_col, st_model, query_text, sections, candidate_limit)
             if do_semantic
             else []
         )
         merged = rrf_merge(fts_hits, sem_hits, fts_weight, sem_weight, top_k)
+        for hit in merged:
+            hit["fts_snippet"] = fts_snippets.get((hit["label_id"], hit["section_name"]))
         results = enrich(conn, merged)
     finally:
         conn.close()
