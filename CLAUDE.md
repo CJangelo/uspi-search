@@ -157,14 +157,31 @@ Adding DailyMed XML support = add `parsers/dailymed_xml.py` implementing the sam
 
 ## Query stage details
 
-- **FTS5 leg**: BM25 via `sections_fts MATCH ?`, joined to `sections` for section filtering
-- **Semantic leg**: encodes query, queries ChromaDB, aggregates chunk-level hits to
-  section level (best cosine distance per `(label_id, section_name)` pair)
-- **Merging**: Reciprocal Rank Fusion with k=60. Per-source weights via `--fts-weight`
-  and `--sem-weight` (default 1.0 each)
-- **Lazy model load**: `SentenceTransformer` is not loaded if ChromaDB collection is empty
-  (safe to run `query` after `parse` only, before `embed` has run — FTS-only mode)
-- **Output**: human-readable by default; `--json` for machine-readable
+`query.py` is a Click group with two subcommands. Results are always grouped
+by drug (one entry per label, sections listed underneath).
+
+### `keyword` subcommand — exact term search (FTS5 only)
+- Runs `sections_fts MATCH ?` (BM25), no ChromaDB, no model load
+- Returns **all** matching drugs by default (`--top-k 0`); pass `--top-k N` to limit
+- Always shows total match count; if truncated: "Showing X of Y. Use --top-k 0 to see all Y."
+- Each matching section shows an FTS5 snippet with the term bracketed: `[vIGA]`
+- Snippet length configurable via `--snippet-tokens` (default 40 tokens)
+- Section filter: `--section clinical_studies` (repeatable)
+
+### `search` subcommand — concept search (semantic, optional hybrid)
+- Encodes query with `SentenceTransformer`, queries ChromaDB by cosine distance
+- Aggregates chunk-level hits to section level (best distance per `(label_id, section_name)`)
+- Returns top-K drugs ranked by relevance (`--top-k`, default 10); no total count shown
+- Add `--fts-weight 1.0` to enable hybrid mode: FTS5 + semantic merged via RRF (k=60)
+- In hybrid mode, matching sections show FTS snippets; semantic-only sections show first 300 chars
+- Non-ASCII characters in display output are replaced with `?` (Windows cp1252 safety)
+
+### Shared options (go before the subcommand)
+`--db`, `--chroma-dir`, `--model`, `--collection`, `--verbose`
+
+### Output
+- Human-readable by default; `--json` emits a JSON object with a `drugs` list
+- `keyword --json` also includes `total_fts_drugs` at the top level
 
 ## Dependencies
 
