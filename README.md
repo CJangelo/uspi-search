@@ -13,31 +13,90 @@ Not RAG — no generation step, pure retrieval.
 uv sync
 ```
 
-## Full pipeline
+## Building the index
+
+The index is built in three stages that must run in order:
+
+1. **Ingest** — fetches drug label JSON from openFDA and saves it locally
+2. **Parse** — reads the raw JSON and writes label text into SQLite with a full-text search index
+3. **Embed** — chunks each label section, embeds it with PubMedBERT, and stores the vectors in ChromaDB
+
+Once all three stages have run, the `keyword` and `search` commands are available.
+
+### Full pipeline (all three stages at once)
+
+The `pipeline` command runs ingest → parse → embed in sequence. Use this for a
+fresh build or when you want to pull updated labels from openFDA.
+
+On the first run it downloads the embedding model (~440MB):
 
 ```bash
-# Ingest, parse, and embed in one step (downloads model on first run, ~440MB for default)
 uv run pipeline --indication "atopic dermatitis"
+```
 
-# Skip ingest (re-parse + re-embed existing raw files)
+If you already have raw label files downloaded (in `data/raw/`) and only want
+to re-parse and re-embed them — without hitting the openFDA API again — use
+`--skip-ingest`:
+
+```bash
 uv run pipeline --skip-ingest
+```
 
-# Skip embed (ingest + parse only, no model download)
+If you only need the SQLite database for keyword search and want to skip the
+model download entirely, use `--skip-embed`:
+
+```bash
 uv run pipeline --skip-embed
 ```
 
-## Individual stages
+### Individual stages
+
+Run stages individually when you need more control — for example, to use a
+different indication for ingest, a different database path, or to try a
+different embedding model without re-downloading labels.
+
+**Stage 1 — Ingest**
+
+Fetches labels matching an indication from openFDA and saves raw JSON to disk.
+The `--indication` text is searched inside the `indications_and_usage` field.
 
 ```bash
-# Stage 1 — fetch labels from openFDA
 uv run ingest --indication "atopic dermatitis" --out-dir data/raw
+```
 
-# Stage 2 — parse raw JSON into SQLite + FTS5
+Output: `data/raw/deduped_atopic_dermatitis_<timestamp>.json`
+
+**Stage 2 — Parse**
+
+Reads the raw JSON, extracts all text sections, and writes them into SQLite
+with an FTS5 full-text search index. Subsequent runs are incremental — labels
+already in the database are skipped unless their version has changed.
+
+```bash
 uv run parse --in-dir data/raw --db data/labels.db
+```
 
-# Stage 3 — embed sections into ChromaDB
+Output: `data/labels.db`
+
+**Stage 3 — Embed**
+
+Chunks each section, embeds with the specified model, and upserts vectors into
+ChromaDB. Each model gets its own subdirectory under `--chroma-dir`, so
+switching models does not overwrite existing embeddings.
+
+```bash
 uv run embed --db data/labels.db --chroma-dir data/chroma
 ```
+
+To try a different model, pass `--model`. The same flag must be passed to
+`query` at search time:
+
+```bash
+uv run embed --db data/labels.db --chroma-dir data/chroma --model BAAI/bge-base-en-v1.5
+uv run query --model BAAI/bge-base-en-v1.5 search "pediatric itch"
+```
+
+Output: `data/chroma/pubmedbert-base-embeddings/` (or the slug of whatever model you used)
 
 ## Searching
 
