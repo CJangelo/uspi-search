@@ -99,20 +99,20 @@ uv run query keyword "vIGA"
 # Query: "vIGA"
 # 3 matching drug(s).
 # ------------------------------------------------------------------------
-# #1  ZORYVE (NDA215985)  score=0.0164
-#     [clinical_studies_table][fts] ...[vIGA]-AD Success [vIGA]-AD success was
+# #1  ZORYVE (NDA215985)
+#     [clinical_studies_table] ...[vIGA]-AD Success [vIGA]-AD success was
 #     defined as a [vIGA]-AD score of "Clear" (0) or "Almost Clear" (1), plus a
 #     2-grade [vIGA]-AD score improvement from baseline at Week 4...
-#     [clinical_studies][fts] ...[vIGA]-AD Success [vIGA]-AD success was defined...
+#     [clinical_studies] ...[vIGA]-AD Success [vIGA]-AD success was defined...
 #
-# #2  VTAMA (NDA215272)  score=0.0159
-#     [clinical_studies][fts] ...the 5-point validated Investigator's Global
+# #2  VTAMA (NDA215272)
+#     [clinical_studies] ...the 5-point validated Investigator's Global
 #     Assessment ([vIGA]-AD). The majority of subjects had "Moderate" disease...
-#     [clinical_studies_table][fts] ...[vIGA]-AD Treatment Success was defined
+#     [clinical_studies_table] ...[vIGA]-AD Treatment Success was defined
 #     as a [vIGA]-AD score of "Clear" or "Almost Clear" and at least a 2-grade...
 #
-# #3  Rinvoq (NDA211675)  score=0.0152
-#     [clinical_studies_table][fts] ...Responder was defined as a patient with
+# #3  Rinvoq (NDA211675)
+#     [clinical_studies_table] ...Responder was defined as a patient with
 #     [vIGA]-AD 0 or 1 ("clear" or "almost clear") with a reduction of >= 2 points...
 ```
 

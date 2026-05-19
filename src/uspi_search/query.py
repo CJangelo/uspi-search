@@ -245,7 +245,13 @@ def _group_by_drug(results: list[dict], limit: int) -> list[dict]:
 # Display                                                                        #
 # --------------------------------------------------------------------------- #
 
-def _print_results(drugs: list[dict], query_text: str, fts_total: int | None, top_k: int) -> None:
+def _print_results(
+    drugs: list[dict],
+    query_text: str,
+    fts_total: int | None,
+    top_k: int,
+    show_score: bool = True,
+) -> None:
     click.echo(f'\nQuery: "{query_text}"')
     if fts_total is not None:
         if top_k > 0 and len(drugs) < fts_total:
@@ -262,11 +268,17 @@ def _print_results(drugs: list[dict], query_text: str, fts_total: int | None, to
     for i, drug in enumerate(drugs, 1):
         label = drug.get("brand_name") or drug.get("generic_name") or drug["label_id"]
         app_no = f"({drug['application_number']})" if drug.get("application_number") else ""
-        click.echo(f"#{i}  {label} {app_no}  score={drug['best_score']:.4f}")
+        if show_score:
+            click.echo(f"#{i}  {label} {app_no}  score={drug['best_score']:.4f}")
+        else:
+            click.echo(f"#{i}  {label} {app_no}")
         for sec in drug["sections"]:
             excerpt = sec.get("fts_snippet") or sec.get("text", "")[:300]
             excerpt = excerpt.replace("\n", " ").encode("ascii", errors="replace").decode("ascii")
-            click.echo(f"    [{sec['section_name']}][{sec['match_source']}] {excerpt}")
+            if show_score:
+                click.echo(f"    [{sec['section_name']}][{sec['match_source']}] {excerpt}")
+            else:
+                click.echo(f"    [{sec['section_name']}] {excerpt}")
         click.echo("")
 
 
@@ -341,7 +353,7 @@ def keyword_cmd(
     if output_json:
         click.echo(json.dumps({"total_fts_drugs": fts_total, "drugs": drugs}, indent=2))
     else:
-        _print_results(drugs, query_text, fts_total, top_k)
+        _print_results(drugs, query_text, fts_total, top_k, show_score=False)
 
 
 @main.command("search")
