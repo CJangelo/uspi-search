@@ -24,6 +24,10 @@ log = logging.getLogger(__name__)
 
 _DEFAULT_MODEL = "all-MiniLM-L6-v2"
 _DEFAULT_COLLECTION = "label_sections"
+
+
+def _model_slug(model: str) -> str:
+    return model.split("/")[-1]
 _RRF_K = 60  # standard constant; higher K = more conservative blending
 _UNLIMITED = 10_000  # practical cap when top_k == 0 (all results)
 
@@ -388,7 +392,7 @@ def search_cmd(
     if not db_path.exists():
         raise click.ClickException(f"Database not found: {db_path} — run 'parse' first.")
 
-    chroma_client = chromadb.PersistentClient(path=str(Path(o["chroma_dir"])))
+    chroma_client = chromadb.PersistentClient(path=str(Path(o["chroma_dir"]) / _model_slug(o["model"])))
     try:
         chroma_col = chroma_client.get_collection(name=o["collection"])
         if chroma_col.count() == 0:

@@ -21,6 +21,10 @@ _DEFAULT_MODEL = "all-MiniLM-L6-v2"
 _DEFAULT_COLLECTION = "label_sections"
 
 
+def _model_slug(model: str) -> str:
+    return model.split("/")[-1]
+
+
 # --------------------------------------------------------------------------- #
 # Chunking                                                                      #
 # --------------------------------------------------------------------------- #
@@ -169,7 +173,7 @@ def main(
     log.info("Loading model: %s", model)
     st_model = SentenceTransformer(model)
 
-    chroma_path = Path(chroma_dir)
+    chroma_path = Path(chroma_dir) / _model_slug(model)
     chroma_path.mkdir(parents=True, exist_ok=True)
     chroma_client = chromadb.PersistentClient(path=str(chroma_path))
     chroma_collection = chroma_client.get_or_create_collection(
@@ -195,7 +199,7 @@ def main(
                 log.info("[%d/%d] %s — %d chunk(s)", labels_done, len(pending), label_id, n)
 
         click.echo(
-            f"Done. {labels_done} label(s) embedded, {total_chunks} chunk(s) -> {chroma_dir}"
+            f"Done. {labels_done} label(s) embedded, {total_chunks} chunk(s) -> {chroma_path}"
         )
     finally:
         conn.close()
