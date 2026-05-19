@@ -7,6 +7,36 @@ Retrieval system for FDA drug labels via openFDA. Two distinct search modes:
 
 Not RAG — no generation step, pure retrieval.
 
+## Requirements
+
+**Runtime**
+- Python 3.11 or later
+- [uv](https://docs.astral.sh/uv/) — used for dependency management and running all commands
+
+**Internet access**
+
+Two separate downloads happen at different stages:
+
+- **Ingest** (`uv run ingest` / `uv run pipeline`) — calls the [openFDA API](https://open.fda.gov/apis/drug/label/) to fetch drug labels. No account or key required; unauthenticated access is rate-limited to 40 requests/minute. Set `OPENFDA_API_KEY` to raise that limit (see [Environment](#environment)).
+- **Embed** (`uv run embed` / `uv run pipeline`) — downloads the embedding model from Hugging Face on first use (~440MB for the default PubMedBERT model). Subsequent runs use the local cache. No Hugging Face account required.
+
+If you already have raw label files on disk you can skip the openFDA call entirely with `--skip-ingest`.
+
+**Disk space**
+
+A typical single-indication run (e.g. atopic dermatitis, ~70 labels) uses roughly:
+
+| Item | Size |
+|---|---|
+| Hugging Face model cache | ~440MB |
+| Raw JSON (`data/raw/`) | ~30MB |
+| SQLite database (`data/labels.db`) | ~15MB |
+| ChromaDB vectors (`data/chroma/`) | ~50MB |
+
+**CPU vs GPU**
+
+Embedding runs on CPU by default. For 70 labels this takes roughly 6 minutes. No GPU is required.
+
 ## Setup
 
 ```bash
