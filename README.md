@@ -41,31 +41,6 @@ uv run embed --db data/labels.db --chroma-dir data/chroma
 
 ## Searching
 
-### Keyword search — exact term
-
-Returns every drug label containing the term. Results are grouped by drug with
-FTS5 snippets showing the match in context (`[term]` bracketed).
-
-```bash
-uv run query keyword "vIGA"
-uv run query keyword "dupilumab" --section indications_and_usage
-uv run query keyword "vIGA" --top-k 5           # limit to 5 drugs (default: all)
-uv run query keyword "vIGA" --snippet-tokens 80  # longer context around each match (default: 40)
-uv run query keyword "vIGA" --json
-```
-
-### Concept search — semantic
-
-Finds labels relevant to the idea, ranked by semantic similarity. Requires
-`embed` to have been run first.
-
-```bash
-uv run query search "pediatric itch"
-uv run query search "IL-13 signaling pathway" --top-k 5
-uv run query search "hepatotoxicity risk" --fts-weight 1.0   # hybrid mode
-uv run query search "pediatric itch" --json
-```
-
 ### Shared options
 
 Placed before the subcommand:
@@ -80,6 +55,43 @@ uv run query --db data/labels.db --verbose keyword "vIGA"
 | `--chroma-dir` | `data/chroma` | ChromaDB directory |
 | `--model` | `all-MiniLM-L6-v2` | Embedding model (must match what `embed` used) |
 | `--verbose` / `-v` | off | Debug logging |
+
+### Keyword search — exact term
+
+Returns every drug label containing the term. Results are grouped by drug with
+FTS5 snippets showing the match in context (`[term]` bracketed).
+
+```bash
+uv run query keyword "vIGA"
+uv run query keyword "dupilumab" --section indications_and_usage
+uv run query keyword "EASI-75" --section clinical_studies --section clinical_studies_table
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `--section` | (all sections) | Restrict to a section name. Repeatable. |
+| `--top-k` | 0 (all) | Max drugs to return. 0 = return all matching drugs. |
+| `--snippet-tokens` | 100 | Approximate tokens of context around each match. |
+| `--json` | off | Emit results as JSON. |
+
+### Concept search — semantic
+
+Finds labels relevant to the idea, ranked by semantic similarity. Requires
+`embed` to have been run first.
+
+```bash
+uv run query search "pediatric itch"
+uv run query search "IL-13 signaling pathway" --top-k 5
+uv run query search "hepatotoxicity risk" --fts-weight 1.0   # hybrid: semantic + keyword
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `--section` | (all sections) | Restrict to a section name. Repeatable. |
+| `--top-k` | 10 | Drugs to return. |
+| `--fts-weight` | 0.0 | Set >0 to blend keyword results (hybrid mode). |
+| `--snippet-tokens` | 100 | Context tokens per FTS snippet (hybrid mode only). |
+| `--json` | off | Emit results as JSON. |
 
 ## Examples
 
@@ -101,26 +113,23 @@ uv run query keyword "vIGA"
 # 3 matching drug(s).
 # ------------------------------------------------------------------------
 # #1  ZORYVE (NDA215985)
-#     [clinical_studies_table] ...[vIGA]-AD Success [vIGA]-AD success was
-#     defined as a [vIGA]-AD score of "Clear" (0) or "Almost Clear" (1), plus a
-#     2-grade [vIGA]-AD score improvement from baseline at Week 4...
-#     [clinical_studies] ...[vIGA]-AD Success [vIGA]-AD success was defined...
+#     [clinical_studies_table] ...N=433 N=221 N=451 N=232 [vIGA]-AD success
+#     32.0% 15.2% 28.9% 12.0% Difference from vehicle (95% CI) ...
+#     17.4% (11.09%, 23.75%) 16.5% (10.61%, 22.42%) Figure 2: [vIGA]-AD
+#     Success [vIGA]-AD success was defined as a [vIGA]-AD score of "Clear"
+#     (0) or "Almost Clear" (1), plus a 2-grade [vIGA]-AD score improvement...
+#     [clinical_studies] ...(same excerpt)
 #
 # #2  VTAMA (NDA215272)
-#     [clinical_studies] ...the 5-point validated Investigator's Global
-#     Assessment ([vIGA]-AD). The majority of subjects had "Moderate" disease...
-#     [clinical_studies_table] ...[vIGA]-AD Treatment Success was defined
-#     as a [vIGA]-AD score of "Clear" or "Almost Clear" and at least a 2-grade...
+#     [clinical_studies] ...Number of subjects randomized 270 137 271 135
+#     [vIGA]-AD Treatment Success ... treatment success was defined as a
+#     [vIGA]-AD score of "Clear" or "Almost Clear" and at least a 2-grade
+#     improvement from baseline. Difference from Vehicle (95% CI)...
 #
 # #3  Rinvoq (NDA211675)
 #     [clinical_studies_table] ...Responder was defined as a patient with
-#     [vIGA]-AD 0 or 1 ("clear" or "almost clear") with a reduction of >= 2 points...
-```
-
-Snippets default to ~40 tokens of context around the match. Use `--snippet-tokens` to get more:
-
-```bash
-uv run query keyword "vIGA" --snippet-tokens 80
+#     [vIGA]-AD 0 or 1 ("clear" or "almost clear") with a reduction of
+#     >= 2 points on a 0-4 ordinal scale...
 ```
 
 ```bash
@@ -130,35 +139,23 @@ uv run query search "pediatric itch"
 # Query: "pediatric itch"
 # ------------------------------------------------------------------------
 # #1  Derma-Smoothe/FS (NDA019452)  score=0.0164
-#     [pediatric_use][semantic] ...HPA axis suppression, Cushing's syndrome, and
+#     [recent_major_changes][semantic] Indication and Usage, Pediatric Patients
+#     with Atopic Dermatitis (1.2) 11/2007
+#     [pediatric_use][semantic] HPA axis suppression, Cushing's syndrome, and
 #     intracranial hypertension have been reported in children receiving topical
-#     corticosteroids...
+#     corticosteroids. Manifestations of adrenal suppression in children include
+#     linear growth retardation, delayed weight gain...
 #     [indications_and_usage][semantic] ...topical treatment of moderate to severe
-#     atopic dermatitis in pediatric patients 3 months and older...
+#     atopic dermatitis in pediatric patients 3 months and older for up to 4 weeks...
 #
 # #2  Doxepin Hydrochloride (NDA020126)  score=0.0161
-#     [pediatric_use][semantic] ...use of Doxepin Hydrochloride Cream, 5% in
-#     pediatric patients is not recommended...
+#     [pediatric_use][semantic] The use of Doxepin Hydrochloride Cream, 5% in
+#     pediatric patients is not recommended. Safe conditions for use in children
+#     have not been established...
+#     [indications_and_usage][semantic] ...indicated for the short-term (up to 8
+#     days) management of moderate pruritus in adult patients with atopic
+#     dermatitis or lichen simplex chronicus...
 # ...
-```
-
-### Narrow by section
-
-```bash
-# Only search the indications_and_usage section
-uv run query keyword "dupilumab" --section indications_and_usage
-
-# Stack multiple sections
-uv run query keyword "EASI-75" --section clinical_studies --section clinical_studies_table
-```
-
-### Get all matching drugs (no limit)
-
-By default `keyword` returns all matches. If you've set `--top-k`, pass `0` to remove the limit:
-
-```bash
-uv run query keyword "JAK inhibitor" --top-k 0
-# "Showing 8 of 8 matching drugs." — no truncation message means all results are shown
 ```
 
 ### Machine-readable output
@@ -172,7 +169,6 @@ uv run query keyword "vIGA" --json | python -m json.tool
 #       "label_id": "ec1bb0d1-...",
 #       "brand_name": "ZORYVE",
 #       "application_number": "NDA215985",
-#       "best_score": 0.016393,
 #       "sections": [
 #         {
 #           "section_name": "clinical_studies_table",

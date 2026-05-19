@@ -37,7 +37,7 @@ def search_fts(
     query_text: str,
     sections: tuple[str, ...],
     limit: int,
-    snippet_tokens: int = 40,
+    snippet_tokens: int = 100,
 ) -> list[tuple[str, str, str]]:
     """Return [(label_id, section_name, snippet)] ranked by FTS5 BM25 (best first).
 
@@ -314,7 +314,7 @@ def main(ctx: click.Context, db: str, chroma_dir: str, model: str, collection: s
 )
 @click.option("--top-k", default=0, show_default=True, type=int,
               help="Drugs to return (0 = all matching).")
-@click.option("--snippet-tokens", default=40, show_default=True, type=int,
+@click.option("--snippet-tokens", default=100, show_default=True, type=int,
               help="Approximate tokens in each FTS5 snippet.")
 @click.option("--json", "output_json", is_flag=True, help="Emit results as JSON.")
 @click.pass_context
@@ -351,7 +351,8 @@ def keyword_cmd(
         conn.close()
 
     if output_json:
-        click.echo(json.dumps({"total_fts_drugs": fts_total, "drugs": drugs}, indent=2))
+        json_drugs = [{k: v for k, v in d.items() if k != "best_score"} for d in drugs]
+        click.echo(json.dumps({"total_fts_drugs": fts_total, "drugs": json_drugs}, indent=2))
     else:
         _print_results(drugs, query_text, fts_total, top_k, show_score=False)
 
