@@ -53,7 +53,7 @@ uv run query --db data/labels.db --verbose keyword "vIGA"
 |---|---|---|
 | `--db` | `data/labels.db` | SQLite database path |
 | `--chroma-dir` | `data/chroma` | ChromaDB directory |
-| `--model` | `all-MiniLM-L6-v2` | Embedding model (must match what `embed` used) |
+| `--model` | `NeuML/pubmedbert-base-embeddings` | Embedding model (must match what `embed` used) |
 | `--verbose` / `-v` | off | Debug logging |
 
 ### Keyword search — exact term

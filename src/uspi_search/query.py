@@ -22,7 +22,7 @@ from sentence_transformers import SentenceTransformer
 
 log = logging.getLogger(__name__)
 
-_DEFAULT_MODEL = "all-MiniLM-L6-v2"
+_DEFAULT_MODEL = "NeuML/pubmedbert-base-embeddings"
 _DEFAULT_COLLECTION = "label_sections"
 
 
