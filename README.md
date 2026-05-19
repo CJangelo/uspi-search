@@ -49,7 +49,8 @@ FTS5 snippets showing the match in context (`[term]` bracketed).
 ```bash
 uv run query keyword "vIGA"
 uv run query keyword "dupilumab" --section indications_and_usage
-uv run query keyword "vIGA" --top-k 5        # limit to 5 drugs (default: all)
+uv run query keyword "vIGA" --top-k 5           # limit to 5 drugs (default: all)
+uv run query keyword "vIGA" --snippet-tokens 80  # longer context around each match (default: 40)
 uv run query keyword "vIGA" --json
 ```
 
@@ -114,6 +115,12 @@ uv run query keyword "vIGA"
 # #3  Rinvoq (NDA211675)
 #     [clinical_studies_table] ...Responder was defined as a patient with
 #     [vIGA]-AD 0 or 1 ("clear" or "almost clear") with a reduction of >= 2 points...
+```
+
+Snippets default to ~40 tokens of context around the match. Use `--snippet-tokens` to get more:
+
+```bash
+uv run query keyword "vIGA" --snippet-tokens 80
 ```
 
 ```bash
