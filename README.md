@@ -3,7 +3,7 @@
 Retrieval system for FDA drug labels via openFDA. Two distinct search modes:
 
 - **keyword** — exact term search (FTS5 BM25). Returns every label containing the term with a snippet showing where it appears.
-- **search** — concept search (semantic via ChromaDB). Finds labels relevant to an idea, not just exact words. Optional hybrid mode adds keyword scoring.
+- **search** — concept search (semantic via ChromaDB). Finds labels relevant to an idea, not just exact words. Uses [PubMedBERT](https://huggingface.co/NeuML/pubmedbert-base-embeddings) embeddings by default — a biomedical model that understands clinical vocabulary (pruritus = itch, IL-31 pathway, pediatric populations, etc.). Optional hybrid mode adds keyword scoring.
 
 Not RAG — no generation step, pure retrieval.
 
