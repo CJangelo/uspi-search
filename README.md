@@ -80,6 +80,104 @@ uv run query --db data/labels.db --verbose keyword "vIGA"
 | `--model` | `all-MiniLM-L6-v2` | Embedding model (must match what `embed` used) |
 | `--verbose` / `-v` | off | Debug logging |
 
+## Examples
+
+### End-to-end: build the database then search
+
+```bash
+# 1. Download labels for atopic dermatitis and build the full index
+uv run pipeline --indication "atopic dermatitis"
+# Pipeline [ingest -> parse -> embed]  indication="atopic dermatitis"
+# Done. 23 labels -> data/labels.db
+# Done. 23 label(s) embedded, 1,847 chunk(s) -> data/chroma
+```
+
+```bash
+# 2. Find every label that mentions a specific clinical endpoint
+uv run query keyword "vIGA"
+
+# Query: "vIGA"
+# 3 matching drug(s).
+# ------------------------------------------------------------------------
+# #1  ZORYVE (NDA215985)  score=0.0164
+#     [clinical_studies_table][fts] ...[vIGA]-AD Success [vIGA]-AD success was
+#     defined as a [vIGA]-AD score of "Clear" (0) or "Almost Clear" (1), plus a
+#     2-grade [vIGA]-AD score improvement from baseline at Week 4...
+#     [clinical_studies][fts] ...[vIGA]-AD Success [vIGA]-AD success was defined...
+#
+# #2  VTAMA (NDA215272)  score=0.0159
+#     [clinical_studies][fts] ...the 5-point validated Investigator's Global
+#     Assessment ([vIGA]-AD). The majority of subjects had "Moderate" disease...
+#     [clinical_studies_table][fts] ...[vIGA]-AD Treatment Success was defined
+#     as a [vIGA]-AD score of "Clear" or "Almost Clear" and at least a 2-grade...
+#
+# #3  Rinvoq (NDA211675)  score=0.0152
+#     [clinical_studies_table][fts] ...Responder was defined as a patient with
+#     [vIGA]-AD 0 or 1 ("clear" or "almost clear") with a reduction of >= 2 points...
+```
+
+```bash
+# 3. Search for a concept — no exact term needed
+uv run query search "pediatric itch"
+
+# Query: "pediatric itch"
+# ------------------------------------------------------------------------
+# #1  Derma-Smoothe/FS (NDA019452)  score=0.0164
+#     [pediatric_use][semantic] ...HPA axis suppression, Cushing's syndrome, and
+#     intracranial hypertension have been reported in children receiving topical
+#     corticosteroids...
+#     [indications_and_usage][semantic] ...topical treatment of moderate to severe
+#     atopic dermatitis in pediatric patients 3 months and older...
+#
+# #2  Doxepin Hydrochloride (NDA020126)  score=0.0161
+#     [pediatric_use][semantic] ...use of Doxepin Hydrochloride Cream, 5% in
+#     pediatric patients is not recommended...
+# ...
+```
+
+### Narrow by section
+
+```bash
+# Only search the indications_and_usage section
+uv run query keyword "dupilumab" --section indications_and_usage
+
+# Stack multiple sections
+uv run query keyword "EASI-75" --section clinical_studies --section clinical_studies_table
+```
+
+### Get all matching drugs (no limit)
+
+By default `keyword` returns all matches. If you've set `--top-k`, pass `0` to remove the limit:
+
+```bash
+uv run query keyword "JAK inhibitor" --top-k 0
+# "Showing 8 of 8 matching drugs." — no truncation message means all results are shown
+```
+
+### Machine-readable output
+
+```bash
+uv run query keyword "vIGA" --json | python -m json.tool
+# {
+#   "total_fts_drugs": 3,
+#   "drugs": [
+#     {
+#       "label_id": "ec1bb0d1-...",
+#       "brand_name": "ZORYVE",
+#       "application_number": "NDA215985",
+#       "best_score": 0.016393,
+#       "sections": [
+#         {
+#           "section_name": "clinical_studies_table",
+#           "fts_snippet": "...[vIGA]-AD Success...",
+#           "text": "..."
+#         }
+#       ]
+#     }
+#   ]
+# }
+```
+
 ## Environment
 
 | Variable | Purpose |
