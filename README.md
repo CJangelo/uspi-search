@@ -16,7 +16,7 @@ uv sync
 ## Full pipeline
 
 ```bash
-# Ingest, parse, and embed in one step (downloads ~400MB model on first run)
+# Ingest, parse, and embed in one step (downloads model on first run, ~440MB for default)
 uv run pipeline --indication "atopic dermatitis"
 
 # Skip ingest (re-parse + re-embed existing raw files)
@@ -101,8 +101,8 @@ uv run query search "hepatotoxicity risk" --fts-weight 1.0   # hybrid: semantic 
 # 1. Download labels for atopic dermatitis and build the full index
 uv run pipeline --indication "atopic dermatitis"
 # Pipeline [ingest -> parse -> embed]  indication="atopic dermatitis"
-# Done. 23 labels -> data/labels.db
-# Done. 23 label(s) embedded, 1,847 chunk(s) -> data/chroma
+# Done. 70 labels -> data/labels.db
+# Done. 70 label(s) embedded, 2,703 chunk(s) -> data/chroma/pubmedbert-base-embeddings
 ```
 
 ```bash
@@ -138,23 +138,24 @@ uv run query search "pediatric itch"
 
 # Query: "pediatric itch"
 # ------------------------------------------------------------------------
-# #1  Derma-Smoothe/FS (NDA019452)  score=0.0164
-#     [recent_major_changes][semantic] Indication and Usage, Pediatric Patients
-#     with Atopic Dermatitis (1.2) 11/2007
-#     [pediatric_use][semantic] HPA axis suppression, Cushing's syndrome, and
-#     intracranial hypertension have been reported in children receiving topical
-#     corticosteroids. Manifestations of adrenal suppression in children include
-#     linear growth retardation, delayed weight gain...
-#     [indications_and_usage][semantic] ...topical treatment of moderate to severe
-#     atopic dermatitis in pediatric patients 3 months and older for up to 4 weeks...
+# #1  NEMLUVIO (BLA761390)  score=0.0164
+#     [pediatric_use][semantic] ...The safety and effectiveness of NEMLUVIO for
+#     the treatment of moderate-to-severe atopic dermatitis in combination with
+#     topical corticosteroids and/or calcineurin inhibitors have been established
+#     in pediatric patients 12 years of age and older...
+#     [indications_and_usage][semantic] NEMLUVIO is an interleukin-31 receptor
+#     antagonist indicated for the treatment of adults and pediatric patients 12
+#     years of age and older with moderate-to-severe atopic dermatitis...
 #
-# #2  Doxepin Hydrochloride (NDA020126)  score=0.0161
-#     [pediatric_use][semantic] The use of Doxepin Hydrochloride Cream, 5% in
-#     pediatric patients is not recommended. Safe conditions for use in children
-#     have not been established...
-#     [indications_and_usage][semantic] ...indicated for the short-term (up to 8
-#     days) management of moderate pruritus in adult patients with atopic
-#     dermatitis or lichen simplex chronicus...
+# #2  Tacrolimus (NDA050777)  score=0.0161
+#     [pediatric_use][semantic] ...Tacrolimus Ointment 0.03% is recommended for
+#     use as second-line therapy for moderate to severe atopic dermatitis in
+#     non-immunocompromised children aged 2 to 15 years...
+#
+# #3  Dupixent (BLA761055)  score=0.0147
+#     [pediatric_use][semantic] ...The safety and effectiveness of DUPIXENT have
+#     been established in pediatric patients 6 months of age and older with
+#     moderate-to-severe AD...
 # ...
 ```
 
