@@ -8,6 +8,7 @@ dependencies = [
     "click>=8.1",
     "sentence-transformers>=3.0",
     "chromadb>=0.6",
+    "torch",
 ]
 
 [project.scripts]
@@ -23,3 +24,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/uspi_search"]
+
+[tool.uv]
+torch-backend = "cu128"
+
+[tool.uv.sources]
+torch = { url = "https://download.pytorch.org/whl/cu128/torch-2.11.0%2Bcu128-cp313-cp313-win_amd64.whl", marker = "python_version == '3.13' and sys_platform == 'win32'" }
